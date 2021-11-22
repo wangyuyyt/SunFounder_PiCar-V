@@ -11,59 +11,53 @@
 *               xxx    xxxx-xx-xx    xxxxxxxx
 **********************************************************************
 '''
-import tempfile
-import subprocess
+from django.http import HttpResponse
+from django.shortcuts import render
+from django.http import StreamingHttpResponse
+import cv2 
+import numpy as np
 import os
-
-_CODE_DIR_ = "/home/pi/SunFounder_PiCar-V"
-
-MJPG_STREAMER_PATH = "mjpg_streamer"
-INPUT_PATH = "/usr/local/lib/input_uvc.so" #  -r 640x320 -f 30 -q 100 r: resolution, f: frame per second, q: quality
-# INPUT_PATH = "/usr/local/lib/input_uvc.so -r 640x320 -f 30 -q 100" # r: resolution, f: frame per second, q: quality
-OUTPUT_PATH = "/usr/local/lib/output_http.so -w /usr/local/www"
-
-stream_cmd = '%s -i "%s" -o "%s" &' % (MJPG_STREAMER_PATH, INPUT_PATH, OUTPUT_PATH)
+import subprocess
+import tempfile
 
 def run_command(cmd):
-	with tempfile.TemporaryFile() as f:
-		subprocess.call(cmd, shell=True, stdout=f, stderr=f)
-		f.seek(0)
-		output = f.read()
-	return output
-
-def start():
-	files = os.listdir('/dev')
-	if 'video0' in files:
-		run_command(stream_cmd)
-	else:
-		raise IOError("Camera is not connected correctly")
-
-def start():
-	files = os.listdir('/dev')
-	print(stream_cmd)
-	video_files = [f for f in files if 'video' in f]
-	if not video_files:
-		raise IOError("Camera is not connected correctly")
-	run_command(stream_cmd)
+        with tempfile.TemporaryFile() as f:
+                subprocess.call(cmd, shell=True, stdout=f, stderr=f)
+                f.seek(0)
+                output = f.read()
+        return output
 
 def get_host():
-	return run_command('hostname -I')
+        return run_command('hostname -I')
 
-def stop():
-	pid = run_command('ps -A | grep mjpg_streamer | grep -v "grep" | head -n 1')
-	if pid == '':
-		return False
-	else:
-		run_command('sudo kill %s' % pid)
-		return True
+class VideoCamera(object):
+    def __init__(self):
+        # Using OpenCV to capture from device 0. If you have trouble capturing
+        # from a webcam, comment the line below out and use a video file
+        # instead.
+        self.video = cv2.VideoCapture(0)
+        # If you decide to use video.mp4, you must have this file in the folder
+        # as the main.py.
+        # self.video = cv2.VideoCapture('video.mp4')
+    
+    def __del__(self):
+        self.video.release()
+    
+    def get_frame(self):
+        success, image = self.video.read()
+        # Construct a black image if image from the camera is empty.
+        if image is None:
+            image = np.zeros((640, 480, 1), np.uint8)
 
-def restart():
-	stop()
-	start()
-	return True
+        # We are using Motion JPEG, but OpenCV defaults to capture raw images,
+        # so we must encode it into JPEG in order to correctly display the
+        # video stream.
+        ret, jpeg = cv2.imencode('.jpg', image)
+        return jpeg.tobytes()
 
-def test():
-	run_command(stream_cmd[:-2])
 
-if __name__ == "__main__":
-	test()
+def gen(camera):
+    while True:
+        frame = camera.get_frame()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
