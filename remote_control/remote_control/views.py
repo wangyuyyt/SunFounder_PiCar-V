@@ -28,8 +28,6 @@ fw.ready()
 SPEED = 60
 bw_status = 0
 
-print(stream.start())
-
 def home(request):
 	return render_to_response("base.html")
 
